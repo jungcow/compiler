@@ -7,9 +7,11 @@
 #define PROC 2
 #define IDENT 3 /* CONST + VAR */
 
-#define TBSIZE 100
+#define TBSIZE 200
+#define BKSIZE 2
 #define LVLMAX 20  // max. block level depth
 
+void initSymbolTable(void);
 void Block(myAstNode *);
 void Statement(myAstNode *);
 void Expression(myAstNode *);
@@ -42,7 +44,7 @@ struct
 } table[TBSIZE];
 
 int block[LVLMAX];  // for nesting block
-int bucket[TBSIZE];
+int bucket[BKSIZE];
 
 int tx = 0, cdx = 0, level = 0, lev = 0;
 int LDiff = 0, Lno = 0, OFFSET = 0;
@@ -51,9 +53,24 @@ int Lab[20];
 
 void Traverse(myAstNode *node)
 {
+	initSymbolTable();
 	Block(node);
 	Emit("END", 7);
+#if DEBUG
 	DisplayTable();
+#endif
+}
+
+void initSymbolTable()
+{
+	for (int i = 0; i < TBSIZE; i++)
+	{
+		table[i].link = -1;
+	}
+	for (int i = 0; i < BKSIZE; i++)
+	{
+		bucket[i] = -1;
+	}
 }
 
 void Block(myAstNode *node)
@@ -99,30 +116,27 @@ void Block(myAstNode *node)
 		link = node->left;
 
 		Enter(link->value.ident, PROC, level, cdx);
-		// Enter(link->value.ident, PROC, level++, cdx);
+		tx_save = tx;
+		EmitPname(link->value.ident);  // procedure의 이름을 출력한다.
 		/**
 		 * procedure들어가기 전에 Setblock으로 nesting block을 알림
 		 * 이는 symbol table과 stack과 같은 block배열을 위함
 		 */
 		SetBlock();  // block[level++] = tx
-		tx_save = tx;
-		EmitPname(link->value.ident);  // procedure의 이름을 출력한다.
 		Block(link->right);
 		Emit("RET", 0);  // Ret 0이라는 명령어를 Code에 저장
-		tx = tx_save;    // 저장해뒀던 현재 table의 top index를 다시 가져온다. 아래에서 현재 level의 statement를 처리하기 위함
-		// --level;
+
 		/**
 		 * 마찬가지로 procedure가 끝나면 reset block을 해줌
 		 * 이 때 collision chain을 풀어줘야 한다. ResetBlock()함수가 그것을 해줄 것.
 		 */
 		ResetBlock();  // block[--level];
+		tx = tx_save;  // 저장해뒀던 현재 table의 top index를 다시 가져온다. 아래에서 현재 level의 statement를 처리하기 위함
+#if DEBUG
 		DisplayTable();
+#endif
 		node = node->right;
 	}
-// processing statement part
-#if DEBUG
-	printf("processing statement\n");
-#endif
 	EmitLab(lab);                  // lab에 대해 주소를 지정
 	Emit1("INT", Int, 0, offset);  // 0(SL), 1(DL), 2(RA)를 포함해야 하므로 3을 추가하여 stack 공간을 구성
 	Statement(node);
@@ -149,21 +163,20 @@ void Condition(myAstNode *node)
 	{
 		Expression(node->left);
 		Expression(node->left->right);
-		Emit("EQ", 9);
+		Emit("EQ", 8);
 		break;
 	}
 	case NE:  // Expression NE Expression
 	{
 		Expression(node->left);
 		Expression(node->left->right);
-		Emit("NE", 8);
+		Emit("NE", 9);
 		break;
 	}
 	case '<':  // Expression '<' Expression
 	{
 		Expression(node->left);
 		Expression(node->left->right);
-		DisplayTable();
 		Emit("LT", 10);
 		break;
 	}
@@ -215,13 +228,13 @@ void Expression(myAstNode *node)
 		 */
 		if (Lookup(node->value.ident, 0))  // const
 		{
-			printf("Lit Const: %s\n", node->value.ident);
+			// printf("lit %s, offset: %d\n", node->value.ident, OFFSET);
 			Emit1("LIT", Lit, LDiff, OFFSET);
 			break;
 		}
 		else if (Lookup(node->value.ident, 1))  // var
 		{
-			printf("Lod Var: %s\n", node->value.ident);
+			// printf("lod %s, offset: %d\n", node->value.ident, OFFSET);
 			Emit1("LOD", Lod, LDiff, OFFSET);
 			break;
 		}
@@ -230,6 +243,8 @@ void Expression(myAstNode *node)
 			printf("symbol reference error: procedure is only for call instruction");
 			break;
 		}
+		printf("undefined symbol error\n");
+		exit(1);
 		break;
 	}
 	// unary operator
@@ -297,7 +312,6 @@ void Statement(myAstNode *node)
 		 * stack이라는 배열에 offset 위치에 변수에 해당하는 값을 넣어줌으로써 변수에 할당하는 것을 구현하는 것.
 		 */
 
-		// TODO: LDiff가 음수이면 참조 불가능(안에 있는 것은 바깥을 참조 가능(forward referencing))
 		// 음수라는 뜻은 바깥에서 안에서 선언된 변수를 참조한다는 뜻
 		if (!Lookup(temp->value.ident, 1) || LDiff < 0)
 		{
@@ -336,12 +350,12 @@ void Statement(myAstNode *node)
 		 * temp : Condition
 		 * temp->right : Statement
 		 */
-		lab1 = GenLab(Lname1);  // 이름 생성
 		Condition(temp);
 		/**
 		 * 위의 Condition이 false일 경우, 아래 JPC를 통해 lab1로 jump하게 된다.
 		 * 따라서 그 밑에 있는 Statement에서 생성하는 binary code들은 실행하지 않고 건너뛰게 된다.
 		 */
+		lab1 = GenLab(Lname1);    // 이름 생성
 		Emit3("JPC", Jpc, lab1);  // 출력만 해주기(현재 어디로 점프할지는 모름, 이름은 아는데, Code address는 모름)
 		Statement(temp->right);
 		EmitLab(lab1);  // 여기서 Code address를 넣어준다.
@@ -368,14 +382,28 @@ int Lookup(char *name, int type)
 	int idx = tx;
 	LDiff = -88;
 	OFFSET = -88;
-	for (; idx >= 0; idx--)
+
+	/**
+	 * hash 값으로 찾으면 복잡해짐 -> hash값이 같은 것이 있을 수도 있고,
+	 * 또한 같은 것이 있다면 backward linking을 구성했을 테니, 이를 이용해 순회를 해서 찾아야 하기 때문
+	 */
+	int bucketIdx = hash(name, type);
+	int tableIdx = bucket[bucketIdx];
+	while (tableIdx >= 0)
 	{
-		if (strcmp(table[idx].name, name) == 0 && table[idx].type == type)
+		if (strcmp(table[tableIdx].name, name) == 0 && table[tableIdx].type == type)
 		{
-			LDiff = level - table[idx].lvl;
-			OFFSET = table[idx].offst;
+			LDiff = level - table[tableIdx].lvl;
+			OFFSET = table[tableIdx].offst;
 			return 1;
 		}
+		tableIdx = table[tableIdx].link;
+	}
+	if (strcmp(table[tableIdx].name, name) == 0 && table[tableIdx].type == type)
+	{
+		LDiff = level - table[tableIdx].lvl;
+		OFFSET = table[tableIdx].offst;
+		return 1;
 	}
 	return 0;
 }
@@ -387,18 +415,20 @@ void Enter(char *name, int type, int lvl, int offst)
 		if (LDiff == 0)
 		{
 			printf("Redefined error\n");
+			exit(1);
 			return;
 		}
 	}
 	unsigned int bucketIdx = hash(name, type);
-	int flag = 0;
-	if (bucket[bucketIdx] != 0)
+	if (bucket[bucketIdx] != -1)
 	{
 		// backward linking
 		int origin = bucket[bucketIdx];
 		bucket[bucketIdx] = tx++;
 		table[bucket[bucketIdx]].link = origin;
-		flag = 1;
+#if DEBUG
+		printf("<<<<<<<<<<<  backward linking occur!! >>>>>>>>>>>>>\n");
+#endif
 	}
 	else
 	{
@@ -408,15 +438,11 @@ void Enter(char *name, int type, int lvl, int offst)
 	table[bucket[bucketIdx]].type = type;
 	table[bucket[bucketIdx]].lvl = lvl;
 	// 0, 1, 2에는 return addr, static link, dynamic link가 있겠지만
-	// procedure의 경우 Code의 index가 오므로 멋대로 + 3해서 계산하지 말 것 계산해서 저장하지 말 것
+	// procedure의 경우 Code의 index가 오므로 멋대로 + 3해서 계산하지 말 것, 계산해서 저장하지 말 것
 	table[bucket[bucketIdx]].offst = offst;
-	if (!flag)
-	{
-		table[bucket[bucketIdx]].link = -1;
-	}
-	// #if DEBUG
-	printf("[ insert symbol to table complete ] : name: %s, type: %d, level: %d, offset: %d, link: %d\n", name, type, lvl, offst, table[bucket[bucketIdx]].link);
-	// #endif
+#if DEBUG
+	printf("[ Symbol Table Enter ] name: %s, type; %d, lvl: %d, offst: %d, link: %d, hash: %d\n", name, type, lvl, offst, table[bucket[bucketIdx]].link, bucketIdx);
+#endif
 }
 void DisplayTable()
 {
@@ -450,6 +476,7 @@ int GenLab(char *label)
 	sprintf(label, "LAB%d", Lno);
 	return Lno++;
 }
+
 void EmitLab(int label)
 {
 	/**
@@ -460,33 +487,42 @@ void EmitLab(int label)
 	Code[Lab[label]].a = cdx;
 	printf("LAB%d\n", label);
 }
+
 void EmitLab1(int label)
 {
 	//	Code[Lab[label]].a=cdx;
 	printf("LAB%d\n", label);
 }
+
 void EmitPname(char *label)
 {
 	printf("%s\n", label);
 }
+
 void Emit1(char *code, fct op, int ld, int offst)
 {
 	printf("	%s	%d	%d\n", code, ld, offst);
 	i.f = op;
 	i.l = ld;
 	i.a = offst;
-	printf("cdx: %d, f: %d, l: %d, a: %d\n", cdx, i.f, i.l, i.a);
+#if DEBUG
+	printf("[ Lod ] cdx: %d, f: %d, l: %d, a: %d\n", cdx, i.f, i.l, i.a);
+#endif
 	Code[cdx++] = i;
 }
+
 void Emit2(char *code, int ld, char *name)
 {  // emit "Cal l,addr"
 	printf("	%s	%d	%s\n", code, ld, name);
 	i.f = Cal;
 	i.l = ld;
-	i.a = OFFSET;  // it must be fixed up
+	i.a = OFFSET;
+#if DEBUG
 	printf("cdx: %d, f: %d, l: %d, a: %d\n", cdx, i.f, i.l, i.a);
+#endif
 	Code[cdx++] = i;
 }
+
 void Emit3(char *code, fct op, int label)
 {
 	/**
@@ -497,17 +533,23 @@ void Emit3(char *code, fct op, int label)
 	printf("	%s	LAB%d\n", code, label);
 	i.f = op;
 	i.l = 0;
-	i.a = Lab[label];  // it must be fixed up
+	i.a = Lab[label];
+#if DEBUG
 	printf("cdx: %d, f: %d, l: %d, a: %d\n", cdx, i.f, i.l, i.a);
+#endif
 	Code[cdx++] = i;
 }
+
 void Emit(char *code, int op)
 {
 	printf("	%s\n", code);
 	i.f = Opr;
 	i.l = 0;
 	i.a = op;
+
+#if DEBUG
 	printf("cdx: %d, f: %d, l: %d, a: %d\n", cdx, i.f, i.l, i.a);
+#endif
 	Code[cdx++] = i;
 }
 
@@ -521,9 +563,9 @@ unsigned int hash(char *name, int type)
 	}
 	h = (h << 4) + type;
 #if DEBUG
-	printf("name: %s, type: %d => hash : %u\n", name, type, (h % TBSIZE));
+	printf("name: %s, type: %d => hash : %u\n", name, type, (h % BKSIZE));
 #endif
-	return h % TBSIZE;
+	return h % BKSIZE;
 }
 
 void SetBlock(void)
@@ -537,7 +579,6 @@ void SetBlock(void)
 	 * 그 지점까지 pop을 할 수 있을 것.
 	 */
 	block[level++] = tx;
-	// block[level] = tx;
 }
 
 void ResetBlock(void)
@@ -553,6 +594,9 @@ void ResetBlock(void)
 		int backlink = table[tx - 1].link;
 		if (backlink < 0)
 			continue;
+#if DEBUG
+		printf("symbol name: %s -> [[[[[[  Reset Collision Chain ]]]]]]]]]]\n", table[tx - 1].name);
+#endif
 		char *name = table[tx - 1].name;
 		int type = table[tx - 1].type;
 		bucket[hash(name, type)] = backlink;

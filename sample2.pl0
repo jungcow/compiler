@@ -1,0 +1,15 @@
+const m=84, n=36;
+var x,y,z,x,r;
+
+procedure gcd;
+	var f,r;
+	begin f:=x; r:=y;
+	while f != r do
+	     begin if f < r then r:=r-f;
+		 if r < f then f:=f-r;
+	     end;
+	z:=f
+	end;
+begin
+	x:=m; y:=n; call gcd;
+end.

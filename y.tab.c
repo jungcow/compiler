@@ -1835,6 +1835,6 @@ void main() {
 		}
 	fclose(fp);
 	printf("------------------------------\n");
-	interprete(); 
+	interprete();
 }
 
