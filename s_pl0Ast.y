@@ -11,7 +11,7 @@ int ln=1, cp=0;
 	int num;
 	char* ident;
 }
-%token TCONST TVAR TPROC TCALL TBEGIN TIF TTHEN TWHILE TDO TEND 
+%token TCONST TVAR TPROC TCALL TBEGIN TIF TTHEN TELSE TWHILE TDO TEND 
 %token ODD NE LE GE ASSIGN NEG
 %token <ast> ID NUM 
 %type <ast> Block Decl ConstDec Constdef_list ConstDef VarDec ProcDef_list ProcDef
@@ -46,6 +46,7 @@ Statement: ID ASSIGN Expression 	{ $$ = buildTree(ASSIGN, linking($1, $3)); }
 	| TCALL ID		{ $$ = buildTree(TCALL, $2); }
 	| TBEGIN Statement_list TEND { $$ = buildTree(TBEGIN, $2); }
 	| TIF Condition TTHEN Statement { $$ = buildTree(TIF, linking($2, $4)); }
+	| TIF Condition TTHEN Statement TELSE Statement { $$ = buildTree(TIF, linking($2, linking($4, $6))); }
 	| TWHILE Condition TDO Statement { $$ = buildTree(TWHILE, linking($2, $4)); }
 	| error { $$=NULL; }
 	|  { $$=NULL; }  ;

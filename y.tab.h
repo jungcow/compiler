@@ -46,18 +46,19 @@
      TBEGIN = 262,
      TIF = 263,
      TTHEN = 264,
-     TWHILE = 265,
-     TDO = 266,
-     TEND = 267,
-     ODD = 268,
-     NE = 269,
-     LE = 270,
-     GE = 271,
-     ASSIGN = 272,
-     NEG = 273,
-     ID = 274,
-     NUM = 275,
-     UM = 276
+     TELSE = 265,
+     TWHILE = 266,
+     TDO = 267,
+     TEND = 268,
+     ODD = 269,
+     NE = 270,
+     LE = 271,
+     GE = 272,
+     ASSIGN = 273,
+     NEG = 274,
+     ID = 275,
+     NUM = 276,
+     UM = 277
    };
 #endif
 /* Tokens.  */
@@ -68,18 +69,19 @@
 #define TBEGIN 262
 #define TIF 263
 #define TTHEN 264
-#define TWHILE 265
-#define TDO 266
-#define TEND 267
-#define ODD 268
-#define NE 269
-#define LE 270
-#define GE 271
-#define ASSIGN 272
-#define NEG 273
-#define ID 274
-#define NUM 275
-#define UM 276
+#define TELSE 265
+#define TWHILE 266
+#define TDO 267
+#define TEND 268
+#define ODD 269
+#define NE 270
+#define LE 271
+#define GE 272
+#define ASSIGN 273
+#define NEG 274
+#define ID 275
+#define NUM 276
+#define UM 277
 
 
 
@@ -93,7 +95,7 @@ typedef union YYSTYPE
 	char* ident;
 }
 /* Line 1529 of yacc.c.  */
-#line 97 "y.tab.h"
+#line 99 "y.tab.h"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1

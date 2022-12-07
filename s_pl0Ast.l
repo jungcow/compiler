@@ -25,6 +25,7 @@ int clev=0;
 "end"		{cp+=3; return(TEND); }
 "if"		{cp+=2; return(TIF); }
 "then"		{cp+=4; return(TTHEN); }
+"else"		{cp+=4; return(TELSE); }
 "while"		{cp+=5; return(TWHILE); }
 "do"		{cp+=2; return(TDO); }
 ":="		{cp+=2; return(ASSIGN); }

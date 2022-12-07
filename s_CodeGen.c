@@ -346,9 +346,10 @@ void Statement(myAstNode *node)
 	case TIF:
 	{
 		/**
-		 * TIF Condition TTHEN Statement
+		 * TIF Condition TTHEN Statement TELSE Statement
 		 * temp : Condition
-		 * temp->right : Statement
+		 * temp->right : Statement (then의 statement)
+		 * temp->right->right : Statement (else의 statement)
 		 */
 		Condition(temp);
 		/**
@@ -358,7 +359,17 @@ void Statement(myAstNode *node)
 		lab1 = GenLab(Lname1);    // 이름 생성
 		Emit3("JPC", Jpc, lab1);  // 출력만 해주기(현재 어디로 점프할지는 모름, 이름은 아는데, Code address는 모름)
 		Statement(temp->right);
-		EmitLab(lab1);  // 여기서 Code address를 넣어준다.
+		if (temp->right->right)  // 이 statement를 처리하기 전에 JPC를 처리해줌으로써 시간 상 JPC가 먼저 처리되게끔 해준다.
+		{
+			lab2 = GenLab(Lname2);
+			Emit3("JPC", Jpc, lab2);
+		}
+		EmitLab(lab1);           // Jpc가 jmp할 주소를 넣어줌으로써 Statement를 처리한 다음의 PC(program counter: Code address)를 이 lab1에 할당해준다.
+		if (temp->right->right)  // else가 있다면
+		{
+			Statement(temp->right->right);  // else 구문
+			EmitLab(lab2);                  // if 전체 구문 이후의 label
+		}
 		break;
 	}
 	case TWHILE:
