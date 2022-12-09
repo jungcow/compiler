@@ -1,6 +1,14 @@
+#if DEBUG
+#include "s_MyInterpreter.c"
+#else
 #include "s_interpreter.c"
+#endif
 #include "s_mypl0Ast.h"
 #include "y.tab.h"
+
+typedef int bool;
+#define true 1
+#define false 0
 
 #define CONST 0
 #define VAR 1
@@ -8,7 +16,7 @@
 #define IDENT 3 /* CONST + VAR */
 
 #define TBSIZE 200
-#define BKSIZE 2
+#define BKSIZE 17
 #define LVLMAX 20  // max. block level depth
 
 void initSymbolTable(void);
@@ -40,7 +48,7 @@ struct
 	int type; /* 0-CONST	1-VARIABLE	2-PROCEDURE */
 	int lvl;
 	int offst;
-	int link;  // collision이 발생하면 충돌 해결 방법으로 backward linking을 사용하기 위함
+	int link; // for collision chain(backward link) 
 } table[TBSIZE];
 
 int block[LVLMAX];  // for nesting block
@@ -94,9 +102,13 @@ void Block(myAstNode *node)
 		link = node->left;
 		while (link)
 		{
+			// don't have to increase offset, because it does not enter in stack
 			Enter(link->value.ident, CONST, level, link->right->value.num);
-			// 얘는 stack에 안들어가므로 offset을 늘려줄 필요가 없다.
-			// link는 id-num-id-num과 같이 연결되어 있으므로, 다음 enter는 id-num을 건너뛰어야 한다.
+			/**
+			 * TCONST
+			 * |
+			 * id-num-id-num
+			 */
 			link = link->right->right;
 		}
 		node = node->right;
@@ -117,28 +129,30 @@ void Block(myAstNode *node)
 
 		Enter(link->value.ident, PROC, level, cdx);
 		tx_save = tx;
-		EmitPname(link->value.ident);  // procedure의 이름을 출력한다.
+		EmitPname(link->value.ident);  // print procedure name
 		/**
 		 * procedure들어가기 전에 Setblock으로 nesting block을 알림
 		 * 이는 symbol table과 stack과 같은 block배열을 위함
 		 */
 		SetBlock();  // block[level++] = tx
 		Block(link->right);
-		Emit("RET", 0);  // Ret 0이라는 명령어를 Code에 저장
+		Emit("RET", 0);  // store "RET 0" instrunction to Code[]
 
 		/**
-		 * 마찬가지로 procedure가 끝나면 reset block을 해줌
+		 * 마찬가지로 procedure가 끝나면 resetblock을 해줌
 		 * 이 때 collision chain을 풀어줘야 한다. ResetBlock()함수가 그것을 해줄 것.
+		 * reset block은 tx = tx_save를 수행하기 전에 미리 해놔야 한다. 
 		 */
 		ResetBlock();  // block[--level];
-		tx = tx_save;  // 저장해뒀던 현재 table의 top index를 다시 가져온다. 아래에서 현재 level의 statement를 처리하기 위함
+		tx = tx_save;  // restore a table top index
+					   // 아래에서 현재 level의 statement를 처리하기 위함
 #if DEBUG
 		DisplayTable();
 #endif
 		node = node->right;
 	}
-	EmitLab(lab);                  // lab에 대해 주소를 지정
-	Emit1("INT", Int, 0, offset);  // 0(SL), 1(DL), 2(RA)를 포함해야 하므로 3을 추가하여 stack 공간을 구성
+	EmitLab(lab);                  // set lab address
+	Emit1("INT", Int, 0, offset);
 	Statement(node);
 }
 
@@ -221,30 +235,27 @@ void Expression(myAstNode *node)
 	case -2:
 	{
 		/**
-		 * procedure인지 파악 -> error처리, 아니면 -> const인지 variable인지를 파악, 명령어를 구분
 		 * procedure : error
 		 * const : Lit
 		 * var : Lod
 		 */
 		if (Lookup(node->value.ident, 0))  // const
 		{
-			// printf("lit %s, offset: %d\n", node->value.ident, OFFSET);
 			Emit1("LIT", Lit, LDiff, OFFSET);
-			break;
 		}
 		else if (Lookup(node->value.ident, 1))  // var
 		{
-			// printf("lod %s, offset: %d\n", node->value.ident, OFFSET);
 			Emit1("LOD", Lod, LDiff, OFFSET);
-			break;
 		}
 		else if (Lookup(node->value.ident, 2))  // procedure
 		{
 			printf("symbol reference error: procedure is only for call instruction");
-			break;
 		}
-		printf("undefined symbol error\n");
-		exit(1);
+		else
+		{
+			printf("undefined symbol error\n");
+			exit(1);
+		}
 		break;
 	}
 	// unary operator
@@ -362,14 +373,16 @@ void Statement(myAstNode *node)
 		if (temp->right->right)  // 이 statement를 처리하기 전에 JPC를 처리해줌으로써 시간 상 JPC가 먼저 처리되게끔 해준다.
 		{
 			lab2 = GenLab(Lname2);
-			Emit3("JPC", Jpc, lab2);
-		}
-		EmitLab(lab1);           // Jpc가 jmp할 주소를 넣어줌으로써 Statement를 처리한 다음의 PC(program counter: Code address)를 이 lab1에 할당해준다.
-		if (temp->right->right)  // else가 있다면
-		{
+			Emit3("JMP", Jmp, lab2);
+			/**
+			 * Jpc가 jmp할 주소를 넣어줌으로써 Statement를 처리한 다음의 PC를
+			 * 이 lab1에 할당해준다.
+			 */
+			EmitLab(lab1);           
+			// else가 있다면
 			Statement(temp->right->right);  // else 구문
-			EmitLab(lab2);                  // if 전체 구문 이후의 label
 		}
+		EmitLab(lab2);                  // if 전체 구문 이후의 label
 		break;
 	}
 	case TWHILE:
@@ -388,7 +401,7 @@ void Statement(myAstNode *node)
 	}
 }
 
-int Lookup(char *name, int type)
+bool	Lookup(char *name, int type)
 {
 	int idx = tx;
 	LDiff = -88;
@@ -406,7 +419,7 @@ int Lookup(char *name, int type)
 		{
 			LDiff = level - table[tableIdx].lvl;
 			OFFSET = table[tableIdx].offst;
-			return 1;
+			return true;
 		}
 		tableIdx = table[tableIdx].link;
 	}
@@ -414,9 +427,9 @@ int Lookup(char *name, int type)
 	{
 		LDiff = level - table[tableIdx].lvl;
 		OFFSET = table[tableIdx].offst;
-		return 1;
+		return true;
 	}
-	return 0;
+	return false;
 }
 
 void Enter(char *name, int type, int lvl, int offst)
@@ -425,9 +438,9 @@ void Enter(char *name, int type, int lvl, int offst)
 	{
 		if (LDiff == 0)
 		{
-			printf("Redefined error\n");
+			printf("Redefined error : [ name: %s, type: %d, level: %d, offst: %d ]\n",
+						name, type, lvl, offst);
 			exit(1);
-			return;
 		}
 	}
 	unsigned int bucketIdx = hash(name, type);
@@ -448,11 +461,14 @@ void Enter(char *name, int type, int lvl, int offst)
 	strcpy(table[bucket[bucketIdx]].name, name);
 	table[bucket[bucketIdx]].type = type;
 	table[bucket[bucketIdx]].lvl = lvl;
-	// 0, 1, 2에는 return addr, static link, dynamic link가 있겠지만
-	// procedure의 경우 Code의 index가 오므로 멋대로 + 3해서 계산하지 말 것, 계산해서 저장하지 말 것
+	/**
+	 * 0, 1, 2에는 return addr, static link, dynamic link가 있겠지만
+	 * procedure의 경우 Code의 index가 오므로 멋대로 + 3해서 계산하지 말 것, 계산해서 저장하지 말 것
+	 */
 	table[bucket[bucketIdx]].offst = offst;
 #if DEBUG
-	printf("[ Symbol Table Enter ] name: %s, type; %d, lvl: %d, offst: %d, link: %d, hash: %d\n", name, type, lvl, offst, table[bucket[bucketIdx]].link, bucketIdx);
+	printf("[ Symbol Table Enter ] name: %s, type; %d, lvl: %d, offst: %d, link: %d, hash: %d\n",
+			name, type, lvl, offst, table[bucket[bucketIdx]].link, bucketIdx);
 #endif
 }
 void DisplayTable()

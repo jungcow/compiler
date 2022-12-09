@@ -1,3 +1,9 @@
+## Execute
+
+```shell
+lex s_pl0Ast.l && yacc -d s_pl0Ast.y && gcc y.tab.c && ./a.out < sample/[sample file]
+```
+
 -   Hash Symbol Table
     -   [x] hash
     -   [x] Enter
@@ -25,6 +31,7 @@
     -   [x] '\*'
     -   [x] '/'
 -   Condition
+
     -   [x] ODD
     -   [x] '='
     -   [x] NE
@@ -32,3 +39,7 @@
     -   [x] '>'
     -   [x] GE
     -   [x] LE
+
+-   More
+    -   [ ] Indexed Variable
+    -   [ ] Function call using parameter

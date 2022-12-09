@@ -5,7 +5,7 @@ procedure gcd;
 	var f,g;
 	begin f:=x; g:=y;
 	while f != g do
-	     begin if f < g then g:=g-f else then f:=f-g;
+	     begin if f < g then g:=g-f else f:=f-g;
 	     end;
 	z:=f
 	end;

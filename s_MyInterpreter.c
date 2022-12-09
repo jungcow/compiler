@@ -192,7 +192,7 @@ void interprete()
 			s[sp + 3] = pc;
 			mp = sp + 1;
 			pc = i.a;
-			sp += 3;
+//			sp += 3;
 			break;
 		case Int:
 			printf("INT %d => %d -> %d\n", i.a, sp, sp + i.a);
@@ -221,7 +221,7 @@ void interprete()
 			printf("sp[%d]: %d\n", sptmp, s[sptmp]);
 		}
 		printf("================================\n\n");
-		usleep(100000);
+		usleep(200000);
 	} while (pc);  // loop until pc=0
 	printf("=== execution result(global var. contents) ===\n");
 	while (sp > 2)
