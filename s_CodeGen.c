@@ -30,6 +30,26 @@ void Enter(char *, int, int, int);  // symbol insert
 void SetBlock();
 void ResetBlock();
 void DisplayTable();                // symbol table dump
+
+/**
+ * @func: GenLab()
+ * Label은 Jmp를 위해 만들어야 한다.
+ * 이 때, Label의 mnemonic 표기는 "Lab[No]"로 표기하고,
+ * 이를 위해 지금까지 Label이 얼마나 생성되었는지를 나타내는 Lno 변수가 필요하다.
+ * 변수를 정리하자면 다음과 같다.
+ *
+ * @var: Lab - 배열, 해당 label의 Code address(instruction의 주소)를 담는다.
+ * @var: label - "Lab[No]" 에 해당하는 문자열, mnemonic code 출력을 위해 필요하다.
+ * @var: Lno - 현재 레이블이 몇개가 만들어졌는지를 알기 위한 전역변수이다.
+ * @var: cdx - 현재 code가 몇개 만들어졌는지를 저장하기 위한 전역변수이다.
+ */
+
+/**
+ * @func: GenLab()
+ * Lab[Lno]에 현재 code address를 넣음으로써,
+ * Lab[현재 label] = cdx : 이 JMP 명령어를 실행시킬 Code address(index)가 cdx라는 뜻
+ * Code[Lab[현재 label]].a = cdx : Jmp할 곳의 Code address(index)가 cdx라는 뜻
+ */
 int GenLab(char *);                 // label 생성(번호와 label) 및 현재 코드주소 저장
 void EmitLab(int);                  // label 출력 및 forward jump 주소 확정
 void EmitLab1(int);                 // label 출력 및 backward jump 주소 저장
@@ -102,7 +122,6 @@ void Block(myAstNode *node)
 		link = node->left;
 		while (link)
 		{
-			// don't have to increase offset, because it does not enter in stack
 			Enter(link->value.ident, CONST, level, link->right->value.num);
 			/**
 			 * TCONST
@@ -130,25 +149,13 @@ void Block(myAstNode *node)
 		Enter(link->value.ident, PROC, level, cdx);
 		tx_save = tx;
 		EmitPname(link->value.ident);  // print procedure name
-		/**
-		 * procedure들어가기 전에 Setblock으로 nesting block을 알림
-		 * 이는 symbol table과 stack과 같은 block배열을 위함
-		 */
+
 		SetBlock();  // block[level++] = tx
 		Block(link->right);
+		ResetBlock();  // block[--level];
 		Emit("RET", 0);  // store "RET 0" instrunction to Code[]
 
-		/**
-		 * 마찬가지로 procedure가 끝나면 resetblock을 해줌
-		 * 이 때 collision chain을 풀어줘야 한다. ResetBlock()함수가 그것을 해줄 것.
-		 * reset block은 tx = tx_save를 수행하기 전에 미리 해놔야 한다. 
-		 */
-		ResetBlock();  // block[--level];
 		tx = tx_save;  // restore a table top index
-					   // 아래에서 현재 level의 statement를 처리하기 위함
-#if DEBUG
-		DisplayTable();
-#endif
 		node = node->right;
 	}
 	EmitLab(lab);                  // set lab address
@@ -310,20 +317,13 @@ void Statement(myAstNode *node)
 	switch (node->op)
 	{
 	case ASSIGN:
-	{ /**
-	   * ID ASSIGN Expression
-	   * temp : ID
-	   * temp->right : Expression
-	   */
-		Expression(temp->right);
+	{
 		/**
-		 * 변수로 LOOKUP -> LDiff와 OFFSET을 Emit1의 인자로 넣어준다.
-		 * 여기서 OFFSET은 Expression에서 load한 값을 저장할 stack의 주소를 말한다.
-		 * 변수는 symbol table에 값을 가지지 않고, offset을 가짐
-		 * stack이라는 배열에 offset 위치에 변수에 해당하는 값을 넣어줌으로써 변수에 할당하는 것을 구현하는 것.
+		 * ID ASSIGN Expression
+		 * temp : ID
+		 * temp->right : Expression
 		 */
-
-		// 음수라는 뜻은 바깥에서 안에서 선언된 변수를 참조한다는 뜻
+		Expression(temp->right);
 		if (!Lookup(temp->value.ident, 1) || LDiff < 0)
 		{
 			printf("undefined variable symbol error : %s\n", temp->value.ident);
@@ -333,10 +333,11 @@ void Statement(myAstNode *node)
 		break;
 	}
 	case TCALL:
-	{ /**
-	   * TCALL ID
-	   * temp : ID
-	   */
+	{
+		/**
+		 * TCALL ID
+		 * temp : ID
+		 */
 		if (!Lookup(temp->value.ident, 2) || LDiff < 0)
 		{
 			printf("undefined procedure symbol error: %s\n", temp->value.ident);
@@ -362,27 +363,22 @@ void Statement(myAstNode *node)
 		 * temp->right : Statement (then의 statement)
 		 * temp->right->right : Statement (else의 statement)
 		 */
-		Condition(temp);
-		/**
-		 * 위의 Condition이 false일 경우, 아래 JPC를 통해 lab1로 jump하게 된다.
-		 * 따라서 그 밑에 있는 Statement에서 생성하는 binary code들은 실행하지 않고 건너뛰게 된다.
-		 */
-		lab1 = GenLab(Lname1);    // 이름 생성
-		Emit3("JPC", Jpc, lab1);  // 출력만 해주기(현재 어디로 점프할지는 모름, 이름은 아는데, Code address는 모름)
+		Condition(temp); //condition of if
+		lab1 = GenLab(Lname1);
+		Emit3("JPC", Jpc, lab1);
 		Statement(temp->right);
-		if (temp->right->right)  // 이 statement를 처리하기 전에 JPC를 처리해줌으로써 시간 상 JPC가 먼저 처리되게끔 해준다.
+		if (temp->right->right)
 		{
+			// after then
 			lab2 = GenLab(Lname2);
 			Emit3("JMP", Jmp, lab2);
-			/**
-			 * Jpc가 jmp할 주소를 넣어줌으로써 Statement를 처리한 다음의 PC를
-			 * 이 lab1에 할당해준다.
-			 */
-			EmitLab(lab1);           
-			// else가 있다면
-			Statement(temp->right->right);  // else 구문
 		}
-		EmitLab(lab2);                  // if 전체 구문 이후의 label
+		EmitLab(lab1); // else or after if-then-else block
+		if (temp->right->right)
+		{
+			Statement(temp->right->right);
+			EmitLab(lab2);
+		}
 		break;
 	}
 	case TWHILE:
@@ -407,10 +403,6 @@ bool	Lookup(char *name, int type)
 	LDiff = -88;
 	OFFSET = -88;
 
-	/**
-	 * hash 값으로 찾으면 복잡해짐 -> hash값이 같은 것이 있을 수도 있고,
-	 * 또한 같은 것이 있다면 backward linking을 구성했을 테니, 이를 이용해 순회를 해서 찾아야 하기 때문
-	 */
 	int bucketIdx = hash(name, type);
 	int tableIdx = bucket[bucketIdx];
 	while (tableIdx >= 0)
@@ -461,10 +453,6 @@ void Enter(char *name, int type, int lvl, int offst)
 	strcpy(table[bucket[bucketIdx]].name, name);
 	table[bucket[bucketIdx]].type = type;
 	table[bucket[bucketIdx]].lvl = lvl;
-	/**
-	 * 0, 1, 2에는 return addr, static link, dynamic link가 있겠지만
-	 * procedure의 경우 Code의 index가 오므로 멋대로 + 3해서 계산하지 말 것, 계산해서 저장하지 말 것
-	 */
 	table[bucket[bucketIdx]].offst = offst;
 #if DEBUG
 	printf("[ Symbol Table Enter ] name: %s, type; %d, lvl: %d, offst: %d, link: %d, hash: %d\n",
@@ -482,23 +470,6 @@ void DisplayTable()
 }
 int GenLab(char *label)
 {
-	/**
-	 * Label은 Jmp를 위해 만들어야 한다.
-	 * 이 때, Label의 mnemonic 표기는 "Lab[No]"로 표기하고,
-	 * 이를 위해 지금까지 Label이 얼마나 생성되었는지를 나타내는 Lno 변수가 필요하다.
-	 * 변수를 정리하자면 다음과 같다.
-	 *
-	 * @var: Lab - 배열, 해당 label의 Code address(instruction의 주소)를 담는다.
-	 * @var: label - "Lab[No]" 에 해당하는 문자열, mnemonic code 출력을 위해 필요하다.
-	 * @var: Lno - 현재 레이블이 몇개가 만들어졌는지를 알기 위한 전역변수이다.
-	 * @var: cdx - 현재 code가 몇개 만들어졌는지를 저장하기 위한 전역변수이다.
-	 */
-
-	/**
-	 * Lab[Lno]에 현재 code address를 넣음으로써,
-	 * Lab[현재 label] = cdx : 이 JMP 명령어를 실행시킬 Code address(index)가 cdx라는 뜻
-	 * Code[Lab[현재 label]].a = cdx : Jmp할 곳의 Code address(index)가 cdx라는 뜻
-	 */
 	Lab[Lno] = cdx;
 	sprintf(label, "LAB%d", Lno);
 	return Lno++;
@@ -506,11 +477,6 @@ int GenLab(char *label)
 
 void EmitLab(int label)
 {
-	/**
-	 * Lab[Lno]에 현재 code address를 넣음으로써,
-	 * Lab[현재 label] = cdx : 이 JMP 명령어를 실행시킬 Code address(index)가 cdx라는 뜻
-	 * Code[Lab[현재 label]].a = cdx : Jmp할 곳의 Code address(index)가 cdx라는 뜻
-	 */
 	Code[Lab[label]].a = cdx;
 	printf("LAB%d\n", label);
 }
@@ -552,11 +518,6 @@ void Emit2(char *code, int ld, char *name)
 
 void Emit3(char *code, fct op, int label)
 {
-	/**
-	 * Instruction Op : JMP
-	 * level : 무시
-	 * addr : label을 나타내는 Code.
-	 */
 	printf("	%s	LAB%d\n", code, label);
 	i.f = op;
 	i.l = 0;
@@ -597,23 +558,11 @@ unsigned int hash(char *name, int type)
 
 void SetBlock(void)
 {
-	/**
-	 * nesting block을 위한 stack에는 table의 현재 top idx가 들어간다.
-	 * 이유 : table은 stack과 같이 0부터 위로 올라가며 쌓이는 구조.
-	 * block이 끝나면 table의 top부터 이 전 block에서 가장 마지막으로
-	 * 추가된 곳까지 pop을 해줘야 한다(ResetBlock) -> 마치 stack과 같다.
-	 * 따라서 block의 현재 level에서의 가장 마지막에 있는 table의 index를 저장해놔야
-	 * 그 지점까지 pop을 할 수 있을 것.
-	 */
 	block[level++] = tx;
 }
 
 void ResetBlock(void)
 {
-	/**
-	 * hash table에서는 backwardlink로 충돌을 해결했기 때문에,
-	 * reset 시 이를 원상복구 해주는 작업이 필요하다
-	 */
 	int previousBlockTx = block[--level];
 
 	for (; tx > previousBlockTx; tx--)
