@@ -16,7 +16,10 @@ typedef enum
 	Cal,
 	Int,
 	Jmp,
-	Jpc
+	Jpc,
+	Lda,
+	Ldi,
+	Sti
 } fct;
 typedef struct
 {
@@ -213,6 +216,19 @@ void interprete()
 			}
 			printf("s[%d] != 0 -> No jmp.., sp: %d\n", sp + 1, sp);
 			break;
+		case Lda: s[++sp] = addr; 
+				  printf("Interpreter: [LDA]\n");
+				  break;
+		case Ldi: s[sp] = s[s[sp]]; 
+				  printf("Interpreter: [LDI]\n");
+				  break;
+		case Sti: s[s[sp-1]] = s[sp]; 
+				  if (s[sp-1] != sp)
+					  sp -=2;
+				  else
+					  --sp;
+				  printf("Interpreter: [STI]\n");
+				  break;
 		};
 		printf("===========[ stack ]===========\n");
 		int sptmp = sp;

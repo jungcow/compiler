@@ -14,6 +14,7 @@ typedef int bool;
 #define VAR 1
 #define PROC 2
 #define IDENT 3 /* CONST + VAR */
+#define INDEXED 4 // for array
 
 #define TBSIZE 200
 #define BKSIZE 17
@@ -26,7 +27,7 @@ void Expression(myAstNode *);
 
 int Lookup(char *, int);            // lookup sym name for type,
 									// if found setup LDiff/OFFSET and return 1 else return 0
-void Enter(char *, int, int, int);  // symbol insert
+void Enter(char *, int, int, int, int);  // symbol insert
 void SetBlock();
 void ResetBlock();
 void DisplayTable();                // symbol table dump
@@ -69,6 +70,7 @@ struct
 	int lvl;
 	int offst;
 	int link; // for collision chain(backward link) 
+	int size;
 } table[TBSIZE];
 
 int block[LVLMAX];  // for nesting block
@@ -122,7 +124,7 @@ void Block(myAstNode *node)
 		link = node->left;
 		while (link)
 		{
-			Enter(link->value.ident, CONST, level, link->right->value.num);
+			Enter(link->value.ident, CONST, level, link->right->value.num, -1);
 			/**
 			 * TCONST
 			 * |
@@ -137,7 +139,17 @@ void Block(myAstNode *node)
 		link = node->left;
 		while (link)
 		{
-			Enter(link->value.ident, VAR, level, offset++);
+			if (link->left)
+			{
+				myAstNode *tmp = link->left;
+				int size = tmp->right->value.num;
+				Enter(tmp->value.ident, INDEXED, level, offset, size);
+				offset += size;
+			}
+			else
+			{
+				Enter(link->value.ident, VAR, level, offset++, -1);
+			}
 			link = link->right;
 		}
 		node = node->right;
@@ -146,7 +158,7 @@ void Block(myAstNode *node)
 	{
 		link = node->left;
 
-		Enter(link->value.ident, PROC, level, cdx);
+		Enter(link->value.ident, PROC, level, cdx, -1);
 		tx_save = tx;
 		EmitPname(link->value.ident);  // print procedure name
 
@@ -247,17 +259,13 @@ void Expression(myAstNode *node)
 		 * var : Lod
 		 */
 		if (Lookup(node->value.ident, 0))  // const
-		{
 			Emit1("LIT", Lit, LDiff, OFFSET);
-		}
 		else if (Lookup(node->value.ident, 1))  // var
-		{
 			Emit1("LOD", Lod, LDiff, OFFSET);
-		}
 		else if (Lookup(node->value.ident, 2))  // procedure
-		{
 			printf("symbol reference error: procedure is only for call instruction");
-		}
+		else if (Lookup(node->value.ident, 4))
+			Emit1("LDA", Lda, LDiff, OFFSET);
 		else
 		{
 			printf("undefined symbol error\n");
@@ -270,6 +278,14 @@ void Expression(myAstNode *node)
 	{
 		Expression(node->left);
 		Emit("NEG", 1);
+		break;
+	}
+	case '[':
+	{
+		Expression(node->left);
+		Expression(node->left->right);
+		Emit("ADD", 2);
+		Emit1("LDI", Ldi, 0, 0);
 		break;
 	}
 	// binary operator
@@ -323,13 +339,25 @@ void Statement(myAstNode *node)
 		 * temp : ID
 		 * temp->right : Expression
 		 */
-		Expression(temp->right);
-		if (!Lookup(temp->value.ident, 1) || LDiff < 0)
+		if (temp->op == '[')
 		{
-			printf("undefined variable symbol error : %s\n", temp->value.ident);
+			Expression(temp->left);
+			Expression(temp->left->right);
+			Emit("ADD", 2);
+			Expression(temp->right);
+			Emit1("STI", Sti, LDiff, OFFSET);
 			break;
 		}
-		Emit1("STO", Sto, LDiff, OFFSET);
+		else
+		{
+			Expression(temp->right);
+			if (Lookup(temp->value.ident, 1))
+			{
+				Emit1("STO", Sto, LDiff, OFFSET);
+				break;
+			}
+		}
+		printf("undefined variable symbol error : %s\n", temp->value.ident);
 		break;
 	}
 	case TCALL:
@@ -424,7 +452,7 @@ bool	Lookup(char *name, int type)
 	return false;
 }
 
-void Enter(char *name, int type, int lvl, int offst)
+void Enter(char *name, int type, int lvl, int offst, int size)
 {
 	if (Lookup(name, type))
 	{
@@ -454,9 +482,10 @@ void Enter(char *name, int type, int lvl, int offst)
 	table[bucket[bucketIdx]].type = type;
 	table[bucket[bucketIdx]].lvl = lvl;
 	table[bucket[bucketIdx]].offst = offst;
+	table[bucket[bucketIdx]].size = size;
 #if DEBUG
-	printf("[ Symbol Table Enter ] name: %s, type; %d, lvl: %d, offst: %d, link: %d, hash: %d\n",
-			name, type, lvl, offst, table[bucket[bucketIdx]].link, bucketIdx);
+	printf("[ Symbol Table Enter ] name: %s, type; %d, lvl: %d, offst: %d, link: %d, size: %d, hash: %d\n",
+			name, type, lvl, offst, table[bucket[bucketIdx]].link, size, bucketIdx);
 #endif
 }
 void DisplayTable()

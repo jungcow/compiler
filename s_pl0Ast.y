@@ -14,9 +14,9 @@ int ln=1, cp=0;
 %token TCONST TVAR TPROC TCALL TBEGIN TIF TTHEN TELSE TWHILE TDO TEND 
 %token ODD NE LE GE ASSIGN NEG
 %token <ast> ID NUM 
-%type <ast> Block Decl ConstDec Constdef_list ConstDef VarDec ProcDef_list ProcDef
+%type <ast> Block Decl ConstDec Constdef_list ConstDef VarDec IndexedDec ProcDef_list ProcDef
 %type <ast> Ident_list Statement Statement_list 
-%type <ast> Condition Expression Term Factor
+%type <ast> Condition Expression Term Factor Var
 		// Non Terminal�� ��� AST Ÿ���� ���� ������ ��
 %left '+' '-'
 %left '*' '/'
@@ -37,12 +37,12 @@ Constdef_list: Constdef_list ',' ConstDef  { $$ = linking($1, $3); }
 ConstDef: ID '=' NUM 		{ $$ = linking($1, $3); } ;
 VarDec: TVAR Ident_list ';'		{ $$ = buildTree(TVAR, $2); } ;
 	|			{ $$ = NULL; } ;
-Ident_list: Ident_list ',' ID		{ $$ = linking($1, $3); }
-	 | ID ;
+Ident_list: Ident_list ',' IndexedDec		{ $$ = linking($1, $3); }
+	 | IndexedDec ;
 ProcDef_list: ProcDef_list ProcDef	{ $$ = linking($1, $2); }
 	| 	 		{ $$ = NULL; } ;
 ProcDef: TPROC ID ';' Block ';' 	{ $$ = buildTree(TPROC, linking($2, $4)); } ;
-Statement: ID ASSIGN Expression 	{ $$ = buildTree(ASSIGN, linking($1, $3)); }
+Statement: Var ASSIGN Expression 	{ $$ = buildTree(ASSIGN, linking($1, $3)); }
 	| TCALL ID		{ $$ = buildTree(TCALL, $2); }
 	| TBEGIN Statement_list TEND { $$ = buildTree(TBEGIN, $2); }
 	| TIF Condition TTHEN Statement { $$ = buildTree(TIF, linking($2, $4)); }
@@ -67,9 +67,13 @@ Expression: Expression '+' Term	{ $$ = buildTree('+', linking($1, $3)); }
 Term: 	Term '*' Factor		{ $$ = buildTree('*', linking($1, $3)); }
 	| Term '/' Factor		{ $$ = buildTree('/', linking($1, $3)); }
 	| Factor ;
-Factor: 	ID				
+Factor: 	Var	
 	| NUM			
 	| '(' Expression ')' 		{ $$=$2; } ;
+Var:		ID
+	| ID '[' Expression ']'		{ $$ = buildTree('[', linking($1, $3)); } ;
+IndexedDec:	ID
+	| ID '[' NUM ']'		{ $$ = buildTree('[', linking($1, $3)); } ;
 %%
 #include "lex.yy.c"
 #include "s_mypl0Ast.c"

@@ -6,7 +6,7 @@
 #define cxmax 200
 #define stksize 500
 
-typedef enum { Lit, Opr, Lod, Sto, Cal, Int, Jmp, Jpc } fct;
+typedef enum { Lit, Opr, Lod, Sto, Cal, Int, Jmp, Jpc, Lda, Ldi, Sti } fct;
 typedef struct {
 	fct f; // function code
 	int l; // level
@@ -30,6 +30,10 @@ int s[stksize]; // data_store (stack storage) indexed by sp
 //	cal l,a
 //	l: level difference
 //	a: procedure entry pt.
+
+// lda l,a
+// l: level difference
+// a: base index offset
 
 int base(int l) {
 	int b1;
@@ -87,6 +91,14 @@ void interprete() { int t;
 			case Int: sp=sp+i.a; break;
 			case Jmp: pc=i.a; break;
 			case Jpc: --sp; if (s[sp+1]==0) pc=i.a;  break;
+			case Lda: s[++sp] = addr; break;
+			case Ldi: s[sp] = s[s[sp]]; break;
+			case Sti: s[s[sp-1]] = s[sp];
+				  if (s[sp-1] != sp)
+					  sp -=2;
+				  else
+					  --sp;
+				  break;
 		};
 #if Debug
 		printf("stack:	%d	%d\n", sp, s[sp]);
