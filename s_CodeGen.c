@@ -1,3 +1,4 @@
+
 #if DEBUG
 #include "s_MyInterpreter.c"
 #else
@@ -19,6 +20,7 @@ typedef int bool;
 #define TBSIZE 200
 #define BKSIZE 17
 #define LVLMAX 20  // max. block level depth
+#define WRNMAX 20
 
 void initSymbolTable(void);
 void Block(myAstNode *);
@@ -31,6 +33,7 @@ void Enter(char *, int, int, int, int);  // symbol insert
 void SetBlock();
 void ResetBlock();
 void DisplayTable();                // symbol table dump
+void printWarning();
 
 /**
  * @func: GenLab()
@@ -77,9 +80,12 @@ int block[LVLMAX];  // for nesting block
 int bucket[BKSIZE];
 
 int tx = 0, cdx = 0, level = 0, lev = 0;
-int LDiff = 0, Lno = 0, OFFSET = 0;
+int LDiff = 0, Lno = 0, OFFSET = 0, ARRSIZE = 0;
 Instruction i;
 int Lab[20];
+
+char warning[20][100];
+int warningIdx = 0;
 
 void Traverse(myAstNode *node)
 {
@@ -89,6 +95,7 @@ void Traverse(myAstNode *node)
 #if DEBUG
 	DisplayTable();
 #endif
+	printWarning();
 }
 
 void initSymbolTable()
@@ -262,13 +269,14 @@ void Expression(myAstNode *node)
 			Emit1("LIT", Lit, LDiff, OFFSET);
 		else if (Lookup(node->value.ident, 1))  // var
 			Emit1("LOD", Lod, LDiff, OFFSET);
-		else if (Lookup(node->value.ident, 2))  // procedure
-			printf("symbol reference error: procedure is only for call instruction");
 		else if (Lookup(node->value.ident, 4))
 			Emit1("LDA", Lda, LDiff, OFFSET);
 		else
 		{
-			printf("undefined symbol error\n");
+			if (Lookup(node->value.ident, 2))  // procedure
+				printf("symbol reference error: procedure is only for call instruction");
+			else
+				printf("undefined symbol error\n");
 			exit(1);
 		}
 		break;
@@ -282,6 +290,17 @@ void Expression(myAstNode *node)
 	}
 	case '[':
 	{
+		if (!Lookup(node->left->value.ident, 4))
+		{
+			printf("reference error: variable : %s is not an array\n", node->left->value.ident);
+			exit(1);
+		}
+		if (ARRSIZE <= node->left->right->value.num)
+		{
+			sprintf(warning[warningIdx++], "warning: array index %d is past the end of the array (which contains %d elements)\n", 
+					node->left->right->value.num, ARRSIZE);
+		}
+
 		Expression(node->left);
 		Expression(node->left->right);
 		Emit("ADD", 2);
@@ -341,6 +360,16 @@ void Statement(myAstNode *node)
 		 */
 		if (temp->op == '[')
 		{
+			if (!Lookup(temp->left->value.ident, 4))
+			{
+				printf("reference error: variable : %s is not an array\n", temp->left->value.ident);
+				exit(1);
+			}
+			if (ARRSIZE <= temp->left->right->value.num)
+			{
+				sprintf(warning[warningIdx++], "warning: array index %d is past the end of the array (which contains %d elements)\n", 
+						temp->left->right->value.num, ARRSIZE);
+			}
 			Expression(temp->left);
 			Expression(temp->left->right);
 			Emit("ADD", 2);
@@ -358,6 +387,7 @@ void Statement(myAstNode *node)
 			}
 		}
 		printf("undefined variable symbol error : %s\n", temp->value.ident);
+		exit(1);
 		break;
 	}
 	case TCALL:
@@ -369,6 +399,7 @@ void Statement(myAstNode *node)
 		if (!Lookup(temp->value.ident, 2) || LDiff < 0)
 		{
 			printf("undefined procedure symbol error: %s\n", temp->value.ident);
+			exit(1);
 			break;
 		}
 		Emit2("CAL", LDiff, temp->value.ident);
@@ -439,6 +470,7 @@ bool	Lookup(char *name, int type)
 		{
 			LDiff = level - table[tableIdx].lvl;
 			OFFSET = table[tableIdx].offst;
+			ARRSIZE = table[tableIdx].size;
 			return true;
 		}
 		tableIdx = table[tableIdx].link;
@@ -447,6 +479,7 @@ bool	Lookup(char *name, int type)
 	{
 		LDiff = level - table[tableIdx].lvl;
 		OFFSET = table[tableIdx].offst;
+		ARRSIZE = table[tableIdx].size;
 		return true;
 	}
 	return false;
@@ -488,6 +521,7 @@ void Enter(char *name, int type, int lvl, int offst, int size)
 			name, type, lvl, offst, table[bucket[bucketIdx]].link, size, bucketIdx);
 #endif
 }
+
 void DisplayTable()
 {
 	int idx = tx;
@@ -497,6 +531,15 @@ void DisplayTable()
 			   table[idx].type, table[idx].lvl, table[idx].offst);
 	}
 }
+
+void printWarning()
+{
+	for (int i = 0; i < warningIdx; i++)
+	{
+		printf("%s\n", warning[i]);
+	}
+}
+
 int GenLab(char *label)
 {
 	Lab[Lno] = cdx;

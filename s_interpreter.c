@@ -108,6 +108,8 @@ void interprete() { int t;
 	while (sp>2) { printf("stack:	%d	%d\n", sp, s[sp]); --sp; }
 };
 
-// void main() {
-// 	interprete();
-// }
+/*
+ void main() {
+ 	interprete();
+ }
+ */

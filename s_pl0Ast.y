@@ -15,9 +15,11 @@ int ln=1, cp=0;
 %token ODD NE LE GE ASSIGN NEG
 %token <ast> ID NUM 
 %type <ast> Block Decl ConstDec Constdef_list ConstDef VarDec IndexedDec ProcDef_list ProcDef
-%type <ast> Ident_list Statement Statement_list 
+%type <ast> Ident_list Statement Statement_list Else_extended //If_extended 
 %type <ast> Condition Expression Term Factor Var
 		// Non Terminal�� ��� AST Ÿ���� ���� ������ ��
+
+%right TELSE TTHEN
 %left '+' '-'
 %left '*' '/'
 %left UM
@@ -45,11 +47,15 @@ ProcDef: TPROC ID ';' Block ';' 	{ $$ = buildTree(TPROC, linking($2, $4)); } ;
 Statement: Var ASSIGN Expression 	{ $$ = buildTree(ASSIGN, linking($1, $3)); }
 	| TCALL ID		{ $$ = buildTree(TCALL, $2); }
 	| TBEGIN Statement_list TEND { $$ = buildTree(TBEGIN, $2); }
+	| TIF Condition TTHEN Statement TELSE Else_extended
+		{ $$=buildTree(TIF,linking($2, linking($4, $6))); }
 	| TIF Condition TTHEN Statement { $$ = buildTree(TIF, linking($2, $4)); }
-	| TIF Condition TTHEN Statement TELSE Statement { $$ = buildTree(TIF, linking($2, linking($4, $6))); }
 	| TWHILE Condition TDO Statement { $$ = buildTree(TWHILE, linking($2, $4)); }
 	| error { $$=NULL; }
 	|  { $$=NULL; }  ;
+
+Else_extended: Statement ;
+
 Statement_list: Statement_list ';' Statement { $$ = linking($1, $3); }
 	| Statement ;
 Condition: ODD Expression		{ $$ = buildTree(ODD, $2); }
@@ -81,15 +87,16 @@ IndexedDec:	ID
 void yyerror(char* s) {
 	printf("line: %d cp: %d %s\n", ln, cp, s);
 }
-void main() {
-	if (yyparse()) return;
-		printf("===== Binary Code =====\n");
+int main() {
+	if (yyparse()) return 1;
+//		printf("===== Binary Code =====\n");
 	fp=fopen("pl0.code", "w");
 	for (int i=0; i<=cdx; i++) {
-		printf("%d	%d	%d	%d\n", i, Code[i].f, Code[i].l, Code[i].a);
+//		printf("%d	%d	%d	%d\n", i, Code[i].f, Code[i].l, Code[i].a);
 		fprintf(fp, "%d	%d	%d	%d\n", i, Code[i].f, Code[i].l, Code[i].a);
 		}
 	fclose(fp);
 	printf("------------------------------\n");
 	interprete();
+	return 0;
 }
