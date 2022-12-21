@@ -1,0 +1,17 @@
+const m=84, n=36;
+var a[5];
+
+procedure gcd;
+   var f[2];
+   begin f[0]:=a[0]; f[1]:=a[1];
+   while f[0] != f[1] do
+        begin
+         if f[0] < f[1]
+         then f[1]:=f[1]-f[0]
+         else f[0]:=f[0]-f[1];
+        end;
+   a[2]:=f[0]
+   end;
+begin
+   a[0]:=m; a[1]:=n; call gcd;
+end.
